@@ -4,6 +4,7 @@ var knex = require('knex')({
   connection: {
     filename: path.join(__dirname, '../db/shortly.sqlite')
   },
+  //debug: true,
   useNullAsDefault: true
 });
 var db = require('bookshelf')(knex);
@@ -44,8 +45,8 @@ db.knex.schema.hasTable('users').then(function(exists) {
   if (!exists) {
     db.knex.schema.createTable('users', function (user) {
       user.increments('id').primary();
-      user.string('password');
       user.string('username').unique();
+      user.string('password');
       user.timestamps();
     }).then(function (table) {
       console.log('Created Table', table);

@@ -2,6 +2,7 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
+var session = require('express-session');
 
 
 var db = require('./app/config');
@@ -12,6 +13,13 @@ var Link = require('./app/models/link');
 var Click = require('./app/models/click');
 
 var app = express();
+
+app.use(session({
+  secret: 'cookie monster',
+  cookie: { maxAge: 60000 },
+  resave: false,
+  saveUninitialized: false
+}));
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -89,26 +97,33 @@ function(req, res) {
 
 app.post('/login',
 function(req, res) {
-  var user = new User({username: req.body.username});
-  user.fetch().then(function(found) {
-    util.log(user);
-    if (!found) {
+  new User({username: req.body.username})
+  .fetch().then(function(user) {
+    if (!user) {
       util.log('user not found: ', req.body.username);
       res.sendStatus(401);
     } else {
       // compare passwords
-      util.comparePassword(req.body.password, user.password)
+      util.comparePassword(req.body.password, user.get('password'))
       .then(passwordsMatch => {
         if (passwordsMatch) {
           // TODO: start a session
-          res.redirect('/');
+          req.session.regenerate(function(err) {
+            if (err) {
+              console.log('error regenerating session: ', err);
+              res.sendStatus(500);
+            } else {
+              req.session.user = user.get('username');
+              res.redirect('/');
+            }
+          });
         } else {
           // show failed login message
           res.end('login failed');
         }
       });
     }
-  });
+  }).catch(util.log);
 });
 
 
