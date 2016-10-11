@@ -77,6 +77,40 @@ function(req, res) {
 /************************************************************/
 
 
+app.get('/login',
+function(req, res) {
+  res.render('login');
+});
+
+app.get('/signup',
+function(req, res) {
+  res.render('signup');
+});
+
+app.post('/login',
+function(req, res) {
+  var user = new User({username: req.body.username});
+  user.fetch().then(function(found) {
+    util.log(user);
+    if (!found) {
+      util.log('user not found: ', req.body.username);
+      res.sendStatus(401);
+    } else {
+      // compare passwords
+      util.comparePassword(req.body.password, user.password)
+      .then(passwordsMatch => {
+        if (passwordsMatch) {
+          // TODO: start a session
+          res.redirect('/');
+        } else {
+          // show failed login message
+          res.end('login failed');
+        }
+      });
+    }
+  });
+});
+
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
