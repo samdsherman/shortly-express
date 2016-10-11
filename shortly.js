@@ -16,7 +16,7 @@ var app = express();
 
 app.use(session({
   secret: 'cookie monster',
-  cookie: { maxAge: 60000 },
+  cookie: { maxAge: 60000 * 5 },
   resave: false,
   saveUninitialized: false
 }));
@@ -31,34 +31,38 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
 
 
-app.get('/', util.isAuthenticated,
+app.get('/', util.checkUser,
 function(req, res) {
   res.render('index');
 });
 
-app.get('/create', util.isAuthenticated,
+app.get('/create', util.checkUser,
 function(req, res) {
   res.render('index');
 });
 
-app.get('/links', util.isAuthenticated,
+app.get('/links', util.checkUser,
 function(req, res) {
+  // User.where({ id: req.session.userId }).fetch({ withRelated: ['links'] })
+  // .then(function(user) {
+  //   res.status(200).send(user.related('links'));
+  // });
   Links.reset().fetch().then(function(links) {
     res.status(200).send(links.models);
   });
 });
 
-// TODO: make it only show that user's links.
-app.post('/links', util.isAuthenticated,
+app.post('/links', util.checkUser,
 function(req, res) {
   var uri = req.body.url;
 
   if (!util.isValidUrl(uri)) {
-    console.log('Not a valid url: ', uri);
+    //console.log('Not a valid url: ', uri);
     return res.sendStatus(404);
   }
 
-  new Link({ url: uri }).fetch().then(function(found) {
+  new Link({ url: uri, 'user_id': req.session.userId }).fetch()
+  .then(function(found) {
     if (found) {
       res.status(200).send(found.attributes);
     } else {
@@ -71,7 +75,8 @@ function(req, res) {
         Links.create({
           url: uri,
           title: title,
-          baseUrl: req.headers.origin
+          baseUrl: req.headers.origin,
+          'user_id': req.session.userId
         })
         .then(function(newLink) {
           res.status(200).send(newLink);
@@ -88,7 +93,8 @@ function(req, res) {
 
 app.get('/login',
 function(req, res) {
-  res.render('login');
+  res.render('login', { hideClass: req.session.failedLogin ? 'valid' : 'hide' });
+  req.session.destroy();
 });
 
 app.get('/logout',
@@ -109,19 +115,29 @@ function(req, res) {
   .fetch().then(function(user) {
     if (!user) {
       util.log('user not found: ', req.body.username);
-      res.sendStatus(401);
+      res.statusCode = 401;
+      req.session.regenerate(function(err) {
+        if (err) {
+          console.log('session error: ', err);
+          res.sendStatus(500);
+        } else {
+          req.session.failedLogin = true;
+          res.redirect('/login');
+        }
+      });
     } else {
       // compare passwords
       util.comparePassword(req.body.password, user.get('password'))
       .then(passwordsMatch => {
         if (passwordsMatch) {
-          // TODO: start a session
           req.session.regenerate(function(err) {
             if (err) {
               console.log('error regenerating session: ', err);
               res.sendStatus(500);
             } else {
+              //console.log('login user', user);
               req.session.user = user.get('username');
+              req.session.userId = user.get('id');
               res.redirect('/');
             }
           });

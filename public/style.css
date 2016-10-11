@@ -135,3 +135,11 @@ form input[type=text], form input[type=password] {
 .creator .message {
   clear: both;
 }
+
+.hide {
+  display: none;
+}
+
+.navigation li.logout-button {
+  float: right;
+}

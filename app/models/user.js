@@ -1,12 +1,13 @@
 var db = require('../config');
 var Promise = require('bluebird');
 var util = require('../../lib/utility');
-
+var Link = require('./link');
 
 var User = db.Model.extend({
   tableName: 'users',
   hasTimestamps: true,
-  urls: function() {
+  links: function() {
+    console.log('in User: adding link hasMany');
     return this.hasMany(Link);
   },
   initialize: function() {
