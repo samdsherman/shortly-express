@@ -31,24 +31,25 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
 
 
-app.get('/', 
+app.get('/', util.isAuthenticated,
 function(req, res) {
   res.render('index');
 });
 
-app.get('/create', 
+app.get('/create', util.isAuthenticated,
 function(req, res) {
   res.render('index');
 });
 
-app.get('/links', 
+app.get('/links', util.isAuthenticated,
 function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.status(200).send(links.models);
   });
 });
 
-app.post('/links', 
+// TODO: make it only show that user's links.
+app.post('/links', util.isAuthenticated,
 function(req, res) {
   var uri = req.body.url;
 
@@ -90,6 +91,13 @@ function(req, res) {
   res.render('login');
 });
 
+app.get('/logout',
+function(req, res) {
+  req.session.destroy(function() {
+    res.redirect('/login');
+  });
+});
+
 app.get('/signup',
 function(req, res) {
   res.render('signup');
@@ -124,6 +132,27 @@ function(req, res) {
       });
     }
   }).catch(util.log);
+});
+
+app.post('/signup',
+function(req, res) {
+  new User({username: req.body.username, password: req.body.password})
+  .save()
+  .then(function(user) {
+    // handle creating user
+    req.session.regenerate(function(err) {
+      if (err) {
+        console.log('error regenerating session: ', err);
+        res.sendStatus(500);
+      } else {
+        req.session.user = user.get('username');
+        res.redirect('/');
+      }
+    });
+  }).catch(function(err) {
+    // user already exists
+    res.end('username is already taken');
+  });
 });
 
 
