@@ -2,7 +2,7 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-var session = require('express-session');
+var session = require('client-sessions');
 
 
 var db = require('./app/config');
@@ -15,10 +15,10 @@ var Click = require('./app/models/click');
 var app = express();
 
 app.use(session({
+  cookieName: 'session',
   secret: 'cookie monster',
-  cookie: { maxAge: 60000 * 5 },
-  resave: false,
-  saveUninitialized: false
+  duration: 60000 * 5,
+  activeDuration: 60000
 }));
 
 app.set('views', __dirname + '/views');
@@ -43,13 +43,13 @@ function(req, res) {
 
 app.get('/links', util.checkUser,
 function(req, res) {
-  // User.where({ id: req.session.userId }).fetch({ withRelated: ['links'] })
-  // .then(function(user) {
-  //   res.status(200).send(user.related('links'));
-  // });
-  Links.reset().fetch().then(function(links) {
-    res.status(200).send(links.models);
+  User.where({ id: req.session.userId }).fetch({ withRelated: ['links'] })
+  .then(function(user) {
+    res.status(200).send(user.related('links'));
   });
+  // Links.reset().fetch().then(function(links) {
+  //   res.status(200).send(links.models);
+  // });
 });
 
 app.post('/links', util.checkUser,
@@ -94,14 +94,13 @@ function(req, res) {
 app.get('/login',
 function(req, res) {
   res.render('login', { hideClass: req.session.failedLogin ? 'valid' : 'hide' });
-  req.session.destroy();
+  req.session.reset();
 });
 
 app.get('/logout',
 function(req, res) {
-  req.session.destroy(function() {
-    res.redirect('/login');
-  });
+  req.session.reset();
+  res.redirect('/login');
 });
 
 app.get('/signup',
@@ -116,31 +115,17 @@ function(req, res) {
     if (!user) {
       util.log('user not found: ', req.body.username);
       res.statusCode = 401;
-      req.session.regenerate(function(err) {
-        if (err) {
-          console.log('session error: ', err);
-          res.sendStatus(500);
-        } else {
-          req.session.failedLogin = true;
-          res.redirect('/login');
-        }
-      });
+      req.session.failedLogin = true;
+      res.redirect('/login');
     } else {
       // compare passwords
       util.comparePassword(req.body.password, user.get('password'))
       .then(passwordsMatch => {
         if (passwordsMatch) {
-          req.session.regenerate(function(err) {
-            if (err) {
-              console.log('error regenerating session: ', err);
-              res.sendStatus(500);
-            } else {
-              //console.log('login user', user);
-              req.session.user = user.get('username');
-              req.session.userId = user.get('id');
-              res.redirect('/');
-            }
-          });
+          //console.log('login user', user);
+          req.session.user = user.get('username');
+          req.session.userId = user.get('id');
+          res.redirect('/');
         } else {
           // show failed login message
           res.end('login failed');
@@ -156,15 +141,8 @@ function(req, res) {
   .save()
   .then(function(user) {
     // handle creating user
-    req.session.regenerate(function(err) {
-      if (err) {
-        console.log('error regenerating session: ', err);
-        res.sendStatus(500);
-      } else {
-        req.session.user = user.get('username');
-        res.redirect('/');
-      }
-    });
+    req.session.user = user.get('username');
+    res.redirect('/');
   }).catch(function(err) {
     // user already exists
     res.end('username is already taken');

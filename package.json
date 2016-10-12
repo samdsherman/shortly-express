@@ -22,6 +22,7 @@
     "bluebird": "^3.3.4",
     "body-parser": "^1.15.0",
     "bookshelf": "^0.9.1",
+    "client-sessions": "^0.7.0",
     "cookie-parser": "^1.4.3",
     "ejs": "^2.4.1",
     "express": "^4.13.4",
