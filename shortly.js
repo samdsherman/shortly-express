@@ -2,8 +2,9 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-var session = require('client-sessions');
-
+var session = require('express-session');
+var passport = require('passport');
+var LocalStrategy = require('passport-local').Strategy;
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -15,11 +16,46 @@ var Click = require('./app/models/click');
 var app = express();
 
 app.use(session({
-  cookieName: 'session',
   secret: 'cookie monster',
-  duration: 60000 * 5,
-  activeDuration: 60000
+  saveUninitialized: true,
+  resave: false,
+  cookie: { maxAge: 60000 * 5 }
 }));
+
+passport.use(new LocalStrategy(
+  function(username, password, done) {
+    // fetch user
+    User.where({ username: username }).fetch()
+    .then(function (user) {
+      if (!user) { return done(null, false); }
+
+      // compare passwords
+      util.comparePassword(password, user.get('password'))
+      .then(passwordsMatch => {
+        if (!passwordsMatch) { return done(null, false); }
+        return done(null, user);
+      });
+    })
+    .catch(function (err) {
+      if (err) { return done(err); }
+    });
+  }
+));
+passport.serializeUser(function(user, done) {
+  done(null, user.id);
+});
+passport.deserializeUser(function(id, done) {
+  User.where({ id: id }).fetch()
+  .then(function (user) {
+    if (!user) {
+      return done(null, false);
+    } else {
+      done(null, user);
+    }
+  });
+});
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -43,7 +79,7 @@ function(req, res) {
 
 app.get('/links', util.checkUser,
 function(req, res) {
-  User.where({ id: req.session.userId }).fetch({ withRelated: ['links'] })
+  User.where({ id: req.user.get('id') }).fetch({ withRelated: ['links'] })
   .then(function(user) {
     res.status(200).send(user.related('links'));
   });
@@ -61,7 +97,7 @@ function(req, res) {
     return res.sendStatus(404);
   }
 
-  new Link({ url: uri, 'user_id': req.session.userId }).fetch()
+  new Link({ url: uri, 'user_id': req.user.get('id') }).fetch()
   .then(function(found) {
     if (found) {
       res.status(200).send(found.attributes);
@@ -76,7 +112,7 @@ function(req, res) {
           url: uri,
           title: title,
           baseUrl: req.headers.origin,
-          'user_id': req.session.userId
+          'user_id': req.user.get('id')
         })
         .then(function(newLink) {
           res.status(200).send(newLink);
@@ -93,13 +129,13 @@ function(req, res) {
 
 app.get('/login',
 function(req, res) {
-  res.render('login', { hideClass: req.session.failedLogin ? 'valid' : 'hide' });
-  req.session.reset();
+  res.render('login', { hideClass: req.user && req.user.failedLogin ? 'valid' : 'hide' });
+  req.logout();
 });
 
 app.get('/logout',
 function(req, res) {
-  req.session.reset();
+  req.logout();
   res.redirect('/login');
 });
 
@@ -108,40 +144,39 @@ function(req, res) {
   res.render('signup');
 });
 
-app.post('/login',
-function(req, res) {
-  new User({username: req.body.username})
-  .fetch().then(function(user) {
-    if (!user) {
-      util.log('user not found: ', req.body.username);
-      res.statusCode = 401;
-      req.session.failedLogin = true;
-      res.redirect('/login');
-    } else {
-      // compare passwords
-      util.comparePassword(req.body.password, user.get('password'))
-      .then(passwordsMatch => {
-        if (passwordsMatch) {
-          //console.log('login user', user);
-          req.session.user = user.get('username');
-          req.session.userId = user.get('id');
-          res.redirect('/');
-        } else {
-          // show failed login message
-          res.end('login failed');
-        }
-      });
+app.post('/login', function(req, res, next) {
+  passport.authenticate('local', function (err, user, info) {
+    if (err) {
+      return next(err);
     }
-  }).catch(util.log);
-});
+    if (!user) {
+      return res.redirect('/login');
+    }
+
+    req.logIn(user, function(err) {
+      if (err) {
+        return next(err);
+      }
+      User.where({ username: user.get('username') }).fetch()
+      .then(function (resultUser) {
+        //req.user.set('userId', resultUser.get('id'));
+        return res.redirect('/');
+      })
+      .catch(function (err) {
+        console.log('user fetch failed:', user.get('username'));
+      });
+    });
+  })(req, res, next);
+}
+);
 
 app.post('/signup',
 function(req, res) {
-  new User({username: req.body.username, password: req.body.password})
+  new User({ username: req.body.username, password: req.body.password })
   .save()
   .then(function(user) {
     // handle creating user
-    req.session.user = user.get('username');
+    req.user.username = user.get('username');
     res.redirect('/');
   }).catch(function(err) {
     // user already exists
